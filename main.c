@@ -26,7 +26,15 @@
 #define DESTINATION_ADDRESSES_TABLE_SIZE 4
 #define SLEEP_TIME_USEC						100000
 
-#define ENABLE_THREAD0
+#define ENABLE_THREAD(id, if_name, thread) \
+	threads_number++; \
+	thread_id = id; \
+	iface_name = if_name; \
+	pthread_create(&thread##id, NULL, (void *) thread, NULL); \
+	usleep(SLEEP_TIME_USEC); \
+	while (lock) {}
+
+/*#define ENABLE_THREAD0*/
 /*#define ENABLE_THREAD1*/
 /*#define ENABLE_THREAD2*/
 /*#define ENABLE_THREAD3*/
@@ -65,9 +73,6 @@ void * thread(void) {
 	const unsigned int threadid = thread_id;
     char ifName[IFNAMSIZ];
 
-	/* Init skeleton of packet */
-	packet_init(packet);
-
 	strncpy(ifName, iface_name, IFNAMSIZ - 1);
 
     /* Open RAW socket to send on */
@@ -87,16 +92,13 @@ void * thread(void) {
     if (ioctl(sockfd, SIOCGIFHWADDR, &if_mac) < 0)
         perror("SIOCGIFHWADDR");
 
-    /* Construct the Ethernet header */
+	/* Init skeleton of packet */
     memset(sendbuf, 0, BUF_SIZ);
+	packet_init(packet);
+
 
     /* Ethernet header */
-	packet->eth.ether_shost[0] = ((uint8_t *)&if_mac.ifr_hwaddr.sa_data)[0];
-	packet->eth.ether_shost[1] = ((uint8_t *)&if_mac.ifr_hwaddr.sa_data)[1];
-	packet->eth.ether_shost[2] = ((uint8_t *)&if_mac.ifr_hwaddr.sa_data)[2];
-	packet->eth.ether_shost[3] = ((uint8_t *)&if_mac.ifr_hwaddr.sa_data)[3];
-	packet->eth.ether_shost[4] = ((uint8_t *)&if_mac.ifr_hwaddr.sa_data)[4];
-	packet->eth.ether_shost[5] = ((uint8_t *)&if_mac.ifr_hwaddr.sa_data)[5];
+	SET_MAC_ADDRESS_AS_CUSTOM(packet->eth.ether_shost, (uint8_t *)&if_mac.ifr_hwaddr.sa_data);
 
 	destination_addresses_table[threadid][0] = ((uint8_t *)&if_mac.ifr_hwaddr.sa_data)[0];
 	destination_addresses_table[threadid][1] = ((uint8_t *)&if_mac.ifr_hwaddr.sa_data)[1];
@@ -121,31 +123,16 @@ void * thread(void) {
 		if (!sending_packet)
 			continue;
 
-		int random_port;
-		while ((random_port = (rand() % DESTINATION_ADDRESSES_TABLE_SIZE)) == threadid);
-
 		tx_len = sizeof(struct ether_header);
 
-		packet->eth.ether_dhost[0] = destination_addresses_table[random_port][0];
-		packet->eth.ether_dhost[1] = destination_addresses_table[random_port][1];
-		packet->eth.ether_dhost[2] = destination_addresses_table[random_port][2];
-		packet->eth.ether_dhost[3] = destination_addresses_table[random_port][3];
-		packet->eth.ether_dhost[4] = destination_addresses_table[random_port][4];
-		packet->eth.ether_dhost[5] = destination_addresses_table[random_port][5];
-
 		/* Destination MAC */
-		socket_address.sll_addr[0] = destination_addresses_table[random_port][0];
-		socket_address.sll_addr[1] = destination_addresses_table[random_port][1];
-		socket_address.sll_addr[2] = destination_addresses_table[random_port][2];
-		socket_address.sll_addr[3] = destination_addresses_table[random_port][3];
-		socket_address.sll_addr[4] = destination_addresses_table[random_port][4];
-		socket_address.sll_addr[5] = destination_addresses_table[random_port][5];
+		SET_MAC_ADDRESS_AS_CUSTOM(socket_address.sll_addr, dst_eth_addr);
 
 		for (int i = tx_len; i < sizeof(struct Packet); i++) {
-			/*sendbuf[i] = (void *)packet[i];*/
+			/*sendbuf[i] = (char)(void *)packet[i];*/
 		}
 
-		if (sendto(sockfd, sendbuf, tx_len, 0, (struct sockaddr*)&socket_address, sizeof(struct sockaddr_ll)) < 0)
+		if (sendto(sockfd, sendbuf, sizeof(struct Packet), 0, (struct sockaddr*)&socket_address, sizeof(struct sockaddr_ll)) < 0)
 			printf("Send failed\n");
 		else
 			/*
@@ -172,37 +159,13 @@ int main(int argc, char *argv[])
 	pthread_t thread1;
 	pthread_t thread2;
 	pthread_t thread3;
+	uint8_t threads_number;
 
-#ifdef ENABLE_THREAD0
-	thread_id = 0;
-	iface_name = "vmnet2";
-	pthread_create(&thread0, NULL, (void *) thread, NULL);
-	usleep(SLEEP_TIME_USEC);
-	while (lock) {}
-#endif /*ENABLE_THREAD0*/ 
+ENABLE_THREAD(0, "vmnet1", thread);
+/*ENABLE_THREAD(1, "vmnet3", thread);*/
+/*ENABLE_THREAD(2, "vmnet4", thread);*/
+/*ENABLE_THREAD(3, "vmnet5", thread);*/
 
-#ifdef ENABLE_THREAD1
-	thread_id = 1;
-	iface_name = "vmnet3";
-	pthread_create(&thread1, NULL, (void *) thread, NULL);
-	usleep(SLEEP_TIME_USEC);
-	while (lock) {}
-#endif /*ENABLE_THREAD1*/ 
-
-#ifdef ENABLE_THREAD2
-	thread_id = 2;
-	iface_name = "vmnet4";
-	pthread_create(&thread2, NULL, (void *) thread, NULL);
-	usleep(SLEEP_TIME_USEC);
-	while (lock) {}
-#endif /*ENABLE_THREAD2*/ 
-
-#ifdef ENABLE_THREAD3
-	thread_id = 3;
-	iface_name = "vmnet5";
-	pthread_create(&thread3, NULL, (void *) thread, NULL);
-	usleep(SLEEP_TIME_USEC);
-#endif /*ENABLE_THREAD3*/ 
 
 	printf("TABLE\n");
 	for (i = 0; i < 4; i++) {
